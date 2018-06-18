@@ -20,13 +20,15 @@ def get_artist_id(artist):
                             headers=HEADERS)
     return response.json()["response"]["hits"][0]['result']['primary_artist']['id']
 
-def get_artist_paths(id):
+def get_artist_paths(artist_id):
     '''
     returns API paths for 50 most popular songs for an artist
     - id: artist id (str or int)
     returns: list of song api paths
     '''
-    page = requests.get('{}/artists/{}/songs/?sort=popularity&per_page=50'.format(GENIUS_URL, yeezy), headers=HEADERS)
+    page = requests.get('{}/artists/{}/songs/?sort=popularity&per_page=50'.format(GENIUS_URL,
+                                                                                  artist_id),
+                        headers=HEADERS)
     song_paths = [song['api_path'] for song in page.json()['response']['songs']]
     return song_paths
 
@@ -43,7 +45,28 @@ def get_song_lyrics(song_path):
     re.sub('\[.*\]', '', lyrics) # rap genius has notes in brackets
     return lyrics
 
+def get_artists_lyrics(artist):
+    '''
+    gets lyrics for an artists top 50 songs
+    - artist: name of artist (str)
+    returns: list of song lyrics
+    '''
+    artist_id = get_artist_id(artist)
+    songs_paths = get_artist_paths(artist_id)
+    return [get_song_lyrics(song) for song in songs_paths]
 
-yeezy = get_artist_id('Kanye West')
-paths = get_artist_paths(yeezy)
-lyrics = [get_song_lyrics(path) for path in paths]
+def download_rap_data(rappers, filename):
+    '''
+    downloads and saves each rappers' top 50 lyrics
+    - rappers: list of rappers names (list of str)
+    - filename: name of file to save (str)
+    returns: True if saved
+    '''
+    rap_lyrics = {rap:get_artists_lyrics(rap) for rap in rappers}
+    rap_data = pd.melt(pd.DataFrame(rap_lyrics))
+    rap_data.columns = ['rapper', 'lyrics']
+    return rap_data.to_csv('data/{}'.format(filename), index=False)
+
+if __name__ == '__main__':
+    rappers = ['Kanye West', 'Drake']
+    download_rap_data(rappers, 'rap_data.csv')
