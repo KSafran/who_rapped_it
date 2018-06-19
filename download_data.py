@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import re
 import pandas as pd
 
-GENIUS_URL = "http://api.genius.com"
+GENIUS_URL = "https://api.genius.com"
 with open('data/rap_genius_api.txt', 'r') as token_file:
     TOKEN = token_file.read()
 HEADERS = {'Authorization': 'Bearer {}'.format(TOKEN)}
@@ -51,9 +51,10 @@ def get_artists_lyrics(artist):
     - artist: name of artist (str)
     returns: list of song lyrics
     '''
+    print('Collecting data for {}'.format(artist))
     artist_id = get_artist_id(artist)
     songs_paths = get_artist_paths(artist_id)
-    return [get_song_lyrics(song) for song in songs_paths]
+    return pd.DataFrame([[artist, get_song_lyrics(song)] for song in songs_paths])
 
 def download_rap_data(rappers, filename):
     '''
@@ -62,11 +63,12 @@ def download_rap_data(rappers, filename):
     - filename: name of file to save (str)
     returns: True if saved
     '''
-    rap_lyrics = {rap:get_artists_lyrics(rap) for rap in rappers}
-    rap_data = pd.melt(pd.DataFrame(rap_lyrics))
+    rap_lyrics = [get_artists_lyrics(rap) for rap in rappers]
+    rap_data = pd.concat(rap_lyrics)
     rap_data.columns = ['rapper', 'lyrics']
     return rap_data.to_csv('data/{}'.format(filename), index=False)
 
 if __name__ == '__main__':
-    rappers = ['Kanye West', 'Drake']
-    download_rap_data(rappers, 'rap_data.csv')
+    rappers = ['2 Chainz', 'Migos', 'Jay Z', 'Lil Wayne', 'Eminem',
+               'Kendrick Lamar', 'Future', 'Nicki Minaj']
+    download_rap_data(rappers, 'rap_data_2.csv')
