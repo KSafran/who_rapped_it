@@ -69,6 +69,6 @@ def download_rap_data(rappers, filename):
     return rap_data.to_csv('data/{}'.format(filename), index=False)
 
 if __name__ == '__main__':
-    rappers = ['2 Chainz', 'Migos', 'Jay Z', 'Lil Wayne', 'Eminem',
-               'Kendrick Lamar', 'Future', 'Nicki Minaj']
-    download_rap_data(rappers, 'rap_data_2.csv')
+    rappers = ['Kanye West', 'Drake', '2 Chainz', 'Migos', 'Jay Z',
+               'Lil Wayne', 'Eminem', 'Kendrick Lamar', 'Future', 'Nicki Minaj']
+    download_rap_data(rappers, 'rap_data.csv')
