@@ -56,6 +56,6 @@ def prep_data(song_data):
     return verse_data
 
 if __name__ == '__main__':
-    song_lyrics = pd.read_csv('data/rap_data.csv')
+    song_lyrics = pd.read_csv('data/rap_data.csv', encoding='ISO-8859-1')
     verse_data = prep_data(song_lyrics)
     verse_data.to_csv('data/prepped_rap_data.csv',  index=False)
