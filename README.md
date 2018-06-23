@@ -9,3 +9,6 @@ Create a virtual python 3 environment
 ### Rap Genius API Account
 Set up a Rap Genius API Client by following the instructions here(https://docs.genius.com/#/getting-started-h1)
 generate an access token, save to data/rap_genius_api.txt
+
+### PyTorch Install instructions
+https://pytorch.org/
