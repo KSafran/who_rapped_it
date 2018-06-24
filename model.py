@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from tqdm import tqdm
 
 STOP_WORDS = set(stopwords.words('english'))
 
@@ -19,6 +20,7 @@ n_songs = max(lyrics['song_id']) + 1
 # validate out of sample
 test_songs = np.random.choice(np.arange(n_songs), n_songs//4, replace=False)
 test_filter = lyrics['song_id'].isin(test_songs)
+
 def formatted_lyrics(lyrics):
     lyrics = lyrics.lower()
     lyrics = re.sub(r'[^\w\s]', '' , lyrics) # removes punctuation
@@ -43,17 +45,20 @@ number_lyrics, word_dict = lyric_to_int(formatted_lyrics)
 artist_dict = {artist:i for i, artist in enumerate(set(lyrics['primary_artist']))}
 labels = [artist_dict[artist] for artist in lyrics['primary_artist']]
 
-X_train = list(compress(number_lyrics, np.logical_not(test_filter)))
-X_test = list(compress(number_lyrics, test_filter))
+useful_verses = [len(verse) > 0 for verse in number_lyrics]
+
+X_train = list(compress(number_lyrics, useful_verses & np.logical_not(test_filter)))
+X_test = list(compress(number_lyrics, useful_verses &test_filter))
 
 y_train = list(compress(labels, np.logical_not(test_filter)))
 y_test =list(compress(labels, test_filter))
 #
 class WhoRappedIt(nn.Module):
 
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, n_rappers):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, batch_size, n_rappers):
         super(WhoRappedIt, self).__init__()
         self.hidden_dim = hidden_dim
+        self.batch_size = batch_size
         self.embeddings = nn.Embedding(vocab_size, embedding_dim)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim)
         self.linear1 = nn.Linear(hidden_dim, 128)
@@ -62,14 +67,14 @@ class WhoRappedIt(nn.Module):
 
 
     def init_hidden(self):
-        return (torch.zeros(1, 1, self.hidden_dim),
-                torch.zeros(1, 1, self.hidden_dim))
+        return (torch.autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_dim)),
+                torch.autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_dim)))
 
     def forward(self, inputs):
         embeds = self.embeddings(inputs)
         lstm_out, self.hidden = self.lstm(
-            embeds.view(len(inputs), 1, -1), self.hidden)
-        out = F.relu(self.linear1(lstm_out.view(len(inputs), -1)))
+            embeds.view(len(inputs), self.batch_size, -1), self.hidden)
+        out = F.relu(self.linear1(lstm_out[-1]))
         out = self.linear2(out)
         log_probs = F.log_softmax(out, dim=1)
         return log_probs
@@ -79,26 +84,28 @@ loss_function = nn.NLLLoss()
 model = WhoRappedIt(vocab_size=len(word_dict),
                     embedding_dim=20,
                     hidden_dim=15,
+                    batch_size=1,
                     n_rappers=len(artist_dict))
+
 optimizer = optim.SGD(model.parameters(), lr=0.1)
 
 losses = []
 
-for epoch in range(50):
+for epoch in range(20):
     total_loss = torch.Tensor([0])
     for i in range(len(X_train)):
 
-        lyric_tensor = torch.tensor(X_train[i], dtype=torch.long)
+
 
         model.zero_grad()
-
+        model.hidden = model.init_hidden()
+        lyric_tensor = torch.autograd.Variable(torch.tensor(X_train[i], dtype=torch.long))
+        target_tensor = torch.autograd.Variable(torch.tensor([y_train[i]], dtype=torch.long))
         log_probs = model(lyric_tensor)
-
-        loss = loss_function(log_probs, torch.tensor(y_train[i], dtype=torch.long))
+        loss = loss_function(log_probs.view(1, -1), target_tensor)
 
         loss.backward()
         optimizer.step()
-
         total_loss += loss.item()
     losses.append(total_loss)
-print(losses)
+    print(total_loss)
