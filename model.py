@@ -14,6 +14,7 @@ from tqdm import tqdm
 STOP_WORDS = set(stopwords.words('english'))
 
 lyrics = pd.read_csv('data/prepped_rap_data.csv')
+lyrics = lyrics.sample(frac=1) # shuffle verse order
 
 n_songs = max(lyrics['song_id']) + 1
 # split up train and test by song - we don't want song-specific words to
@@ -92,20 +93,41 @@ optimizer = optim.SGD(model.parameters(), lr=0.1)
 losses = []
 
 for epoch in range(20):
-    total_loss = torch.Tensor([0])
+    print("Epoch %d\n" % epoch)
+
+    train_loss = 0
+    train_correct = 0
     for i in range(len(X_train)):
-
-
 
         model.zero_grad()
         model.hidden = model.init_hidden()
         lyric_tensor = torch.autograd.Variable(torch.tensor(X_train[i], dtype=torch.long))
         target_tensor = torch.autograd.Variable(torch.tensor([y_train[i]], dtype=torch.long))
+
         log_probs = model(lyric_tensor)
+
+        train_correct += (log_probs.view(-1).max(0)[1] == y_train[i])
         loss = loss_function(log_probs.view(1, -1), target_tensor)
 
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
-    losses.append(total_loss)
-    print(total_loss)
+
+        train_loss += loss.item()
+
+    print("Train Loss %.2f" % train_loss)
+    print("Train Accuracy: %0.3f\n" % (int(train_correct)/len(X_train)))
+    losses.append((train_loss, int(train_correct)/len(X_train)))
+
+    test_loss = 0
+    correct = 0
+    for i in range(len(X_test)):
+        model.hidden = model.init_hidden()
+        lyric_tensor = torch.autograd.Variable(torch.tensor(X_test[i], dtype=torch.long))
+        log_probs = model(lyric_tensor)
+
+        correct += (log_probs.view(-1).max(0)[1] == y_test[i])
+        loss = loss_function(log_probs.view(1, -1), target_tensor)
+        test_loss += loss.item()
+
+    print("Test Loss %.2f" % test_loss)
+    print("Test Accuracy: %0.3f\n" % (int(correct)/len(X_test)))
