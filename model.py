@@ -13,22 +13,24 @@ from tqdm import tqdm
 
 STOP_WORDS = set(stopwords.words('english'))
 
-lyrics = pd.read_csv('data/prepped_rap_data.csv')
-lyrics = lyrics.sample(frac=1) # shuffle verse order
+def create_test_filter(data, test_pct):
+    '''
+    splits up train and test by song - we don't want song-specific words to
+    validate out of sample
+    '''
+    n_songs = max(data['song_id']) + 1
+    test_songs = np.random.choice(np.arange(n_songs), int(n_songs * test_pct),
+                                  replace=False)
+    return data['song_id'].isin(test_songs)
 
-n_songs = max(lyrics['song_id']) + 1
-# split up train and test by song - we don't want song-specific words to
-# validate out of sample
-test_songs = np.random.choice(np.arange(n_songs), n_songs//4, replace=False)
-test_filter = lyrics['song_id'].isin(test_songs)
-
-def formatted_lyrics(lyrics):
+def format_lyrics(lyrics):
+    '''
+    lowercases, tokenizes, and removes punctuation and stop words
+    '''
     lyrics = lyrics.lower()
     lyrics = re.sub(r'[^\w\s]', '' , lyrics) # removes punctuation
     lyrics = word_tokenize(lyrics)
     return [word for word in lyrics if word not in STOP_WORDS]
-
-formatted_lyrics = [formatted_lyrics(lyric) for lyric in lyrics['verse_lyrics']]
 
 def lyric_to_int(lyrics):
     '''
@@ -41,19 +43,30 @@ def lyric_to_int(lyrics):
     vocab_dict = {word:i for i, word in enumerate(vocab)}
     return [[vocab_dict[word] for word in lyric] for lyric in lyrics], vocab_dict
 
-number_lyrics, word_dict = lyric_to_int(formatted_lyrics)
+def prep_data(data, test_pct):
+    '''
+    preps lyrics dataset for modeling
+    returns: train data tuple, test data tutple, word dictionary, artist dictionary
+    '''
+    lyrics = data.sample(frac=1) # shuffle verse order
+    test_filter = create_test_filter(lyrics, test_pct)
 
-artist_dict = {artist:i for i, artist in enumerate(set(lyrics['primary_artist']))}
-labels = [artist_dict[artist] for artist in lyrics['primary_artist']]
+    formatted_lyrics = [format_lyrics(lyric) for lyric in lyrics['verse_lyrics']]
+    number_lyrics, word_dict = lyric_to_int(formatted_lyrics)
 
-useful_verses = [len(verse) > 0 for verse in number_lyrics]
+    artist_dict = {artist:i for i, artist in enumerate(set(lyrics['primary_artist']))}
+    labels = [artist_dict[artist] for artist in lyrics['primary_artist']]
 
-X_train = list(compress(number_lyrics, useful_verses & np.logical_not(test_filter)))
-X_test = list(compress(number_lyrics, useful_verses &test_filter))
+    useful_verses = [len(verse) > 0 for verse in number_lyrics]
 
-y_train = list(compress(labels, np.logical_not(test_filter)))
-y_test =list(compress(labels, test_filter))
-#
+    X_train = list(compress(number_lyrics, useful_verses & np.logical_not(test_filter)))
+    y_train = list(compress(labels, useful_verses & np.logical_not(test_filter)))
+
+    X_test = list(compress(number_lyrics, useful_verses & test_filter))
+    y_test = list(compress(labels, useful_verses & test_filter))
+
+    return (X_train, y_train), (X_test, y_test), word_dict, artist_dict
+
 class WhoRappedIt(nn.Module):
 
     def __init__(self, vocab_size, embedding_dim, hidden_dim, batch_size, n_rappers):
@@ -66,8 +79,10 @@ class WhoRappedIt(nn.Module):
         self.linear2 = nn.Linear(128, n_rappers)
         self.hidden = self.init_hidden()
 
-
     def init_hidden(self):
+        '''
+        resets the hidden state, do this before each pass of lstm
+        '''
         return (torch.autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_dim)),
                 torch.autograd.Variable(torch.zeros(1, self.batch_size, self.hidden_dim)))
 
@@ -81,53 +96,71 @@ class WhoRappedIt(nn.Module):
         return log_probs
 
 
-loss_function = nn.NLLLoss()
-model = WhoRappedIt(vocab_size=len(word_dict),
-                    embedding_dim=20,
-                    hidden_dim=15,
-                    batch_size=1,
-                    n_rappers=len(artist_dict))
+def train_model(model, train_data, test_data, epochs):
+    '''
+    trains the neural network
+    '''
+    X_train, y_train = train_data
+    X_test, y_test = train_data
 
-optimizer = optim.SGD(model.parameters(), lr=0.1)
+    loss_function = nn.NLLLoss()
 
-losses = []
+    optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-for epoch in range(20):
-    print("Epoch %d\n" % epoch)
+    losses = []
 
-    train_loss = 0
-    train_correct = 0
-    for i in range(len(X_train)):
+    for epoch in range(epochs):
+        print("Epoch %d\n" % epoch)
 
-        model.zero_grad()
-        model.hidden = model.init_hidden()
-        lyric_tensor = torch.autograd.Variable(torch.tensor(X_train[i], dtype=torch.long))
-        target_tensor = torch.autograd.Variable(torch.tensor([y_train[i]], dtype=torch.long))
+        train_loss = 0
+        train_correct = 0
+        for i in range(len(X_train)):
 
-        log_probs = model(lyric_tensor)
+            model.zero_grad()
+            model.hidden = model.init_hidden()
+            lyric_tensor = torch.autograd.Variable(torch.tensor(X_train[i], dtype=torch.long))
+            target_tensor = torch.autograd.Variable(torch.tensor([y_train[i]], dtype=torch.long))
 
-        train_correct += (log_probs.view(-1).max(0)[1] == y_train[i])
-        loss = loss_function(log_probs.view(1, -1), target_tensor)
+            log_probs = model(lyric_tensor)
 
-        loss.backward()
-        optimizer.step()
+            train_correct += (log_probs.view(-1).max(0)[1] == y_train[i])
+            loss = loss_function(log_probs.view(1, -1), target_tensor)
 
-        train_loss += loss.item()
+            loss.backward()
+            optimizer.step()
 
-    print("Train Loss %.2f" % train_loss)
-    print("Train Accuracy: %0.3f\n" % (int(train_correct)/len(X_train)))
-    losses.append((train_loss, int(train_correct)/len(X_train)))
+            train_loss += loss.item()
 
-    test_loss = 0
-    correct = 0
-    for i in range(len(X_test)):
-        model.hidden = model.init_hidden()
-        lyric_tensor = torch.autograd.Variable(torch.tensor(X_test[i], dtype=torch.long))
-        log_probs = model(lyric_tensor)
+        print("Train Loss %.2f" % train_loss)
+        print("Train Accuracy: %0.3f\n" % (int(train_correct)/len(X_train)))
+        losses.append((train_loss, int(train_correct)/len(X_train)))
 
-        correct += (log_probs.view(-1).max(0)[1] == y_test[i])
-        loss = loss_function(log_probs.view(1, -1), target_tensor)
-        test_loss += loss.item()
+        test_loss = 0
+        correct = 0
+        for i in range(len(X_test)):
+            model.hidden = model.init_hidden()
+            lyric_tensor = torch.autograd.Variable(torch.tensor(X_test[i], dtype=torch.long))
+            log_probs = model(lyric_tensor)
 
-    print("Test Loss %.2f" % test_loss)
-    print("Test Accuracy: %0.3f\n" % (int(correct)/len(X_test)))
+            correct += (log_probs.view(-1).max(0)[1] == y_test[i])
+            loss = loss_function(log_probs.view(1, -1), target_tensor)
+            test_loss += loss.item()
+
+        print("Test Loss %.2f" % test_loss)
+        print("Test Accuracy: %0.3f\n" % (int(correct)/len(X_test)))
+
+    return model
+
+if __name__ == '__main__':
+
+    lyrics = pd.read_csv('data/prepped_rap_data.csv')
+
+    train_data, test_data, word_dict, artist_dict = prep_data(lyrics, test_pct=0.25)
+
+    model = WhoRappedIt(vocab_size=len(word_dict),
+                        embedding_dim=20,
+                        hidden_dim=15,
+                        batch_size=1,
+                        n_rappers=len(artist_dict))
+
+    train_model(model, train_data, test_data, epochs=20)
