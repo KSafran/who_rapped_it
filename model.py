@@ -46,7 +46,7 @@ def lyric_to_int(lyrics):
 def prep_data(data, test_pct):
     '''
     preps lyrics dataset for modeling
-    returns: train data tuple, test data tutple, word dictionary, artist dictionary
+    returns: train data tuple, test data tuple, word dictionary, artist dictionary
     '''
     lyrics = data.sample(frac=1) # shuffle verse order
     test_filter = create_test_filter(lyrics, test_pct)
@@ -104,9 +104,7 @@ def train_model(model, train_data, test_data, epochs):
     X_test, y_test = train_data
 
     loss_function = nn.NLLLoss()
-
     optimizer = optim.SGD(model.parameters(), lr=0.1)
-
     losses = []
 
     for epoch in range(epochs):

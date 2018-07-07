@@ -2,6 +2,7 @@ import unittest
 import pandas as pd
 from . import download_data
 from . import data_prep
+from . import model
 
 class UnitTests(unittest.TestCase):
 
@@ -60,3 +61,36 @@ class UnitTests(unittest.TestCase):
     def test_artist_replacement(self):
         self.assertEqual(data_prep.replace_other_artists('Joe', ['Kanye', 'Drake']), 'other')
         self.assertEqual(data_prep.replace_other_artists('Drake', ['Kanye', 'Drake']), 'Drake')
+
+    # Modeling
+    def test_test_filter(self):
+        test_data = pd.DataFrame({'song_id':4 * [0] + 4 * [1],
+                                  'lyrics':8 * ['blah']})
+        sample = model.create_test_filter(test_data, 0.5)
+        self.assertEqual(sum(sample), 4)
+        self.assertEqual(len(test_data['song_id'][sample].unique()), 1)
+
+    def test_lyrics_format(self):
+        lyrics = model.format_lyrics('Unformatted Lyrics. Woo!')
+        self.assertEqual(lyrics, ['unformatted', 'lyrics', 'woo'])
+
+    def test_lyric_to_int(self):
+        tokenized_lyrics = [['tokenized', 'lyrics'], ['tokenized', 'words']]
+        token_ints, word_dict = model.lyric_to_int(tokenized_lyrics)
+        self.assertTrue(isinstance(token_ints[0][0], int))
+        self.assertTrue(isinstance(word_dict, dict))
+        self.assertEqual(token_ints[0][0], word_dict['tokenized'])
+        self.assertEqual(token_ints[0][0], token_ints[1][0])
+
+    def test_prep_data(self):
+        sample_data = pd.DataFrame({'song_id':[0, 0, 1, 1],
+                                    'verse_lyrics':['Old McDonald', 'had a Farm',
+                                                    'eeyi eeyi oh', 'on that farm'],
+                                    'primary_artist':['sue', 'sue', 'jim', 'bob']})
+        train, test, words, artists = model.prep_data(sample_data, test_pct=0.5)
+        self.assertTrue(isinstance(words, dict))
+        self.assertTrue(isinstance(artists, dict))
+        self.assertTrue(isinstance(words['farm'], int))
+        self.assertTrue(isinstance(artists['sue'], int))
+        self.assertEqual(len(train[0]), 2)
+        self.assertEqual(len(test[0]), 2)
