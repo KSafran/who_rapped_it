@@ -8,17 +8,25 @@ with open('data/rap_genius_api.txt', 'r') as token_file:
     TOKEN = token_file.read()
 HEADERS = {'Authorization': 'Bearer {}'.format(TOKEN)}
 
-def get_artist_id(artist):
+def search_rap_genius(query):
     '''
     looks up an artists Rap Genius API path by name
     - artists: artist's name (str)
     returns: artist's API path
     '''
     search_url = GENIUS_URL + "/search"
-    params = {'q': artist}
+    params = {'q': query}
     response = requests.get(search_url, params=params,
                             headers=HEADERS)
-    return response.json()["response"]["hits"][0]['result']['primary_artist']['id']
+    return response.json()["response"]["hits"][0]['result']
+
+def get_artist_id(artist):
+    result = search_rap_genius(artist)
+    return result['primary_artist']['id']
+
+def get_song_path(song):
+    result = search_rap_genius(song)
+    return result['api_path']
 
 def get_artist_paths(artist_id):
     '''
